@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -15,6 +16,7 @@ const HomePage = () => {
   const [featuredItem, setFeaturedItem] = useState<JellyfinItem | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dataFetched, setDataFetched] = useState(false);
   
   const navigate = useNavigate();
   const { getServerUrl, getUserInfo, clearAuth } = useJellyfinStore();
@@ -23,10 +25,14 @@ const HomePage = () => {
   const userInfo = getUserInfo();
   
   useEffect(() => {
+    // Vérifier si l'utilisateur est connecté
     if (!serverUrl || !userInfo) {
       navigate('/');
       return;
     }
+    
+    // Prévenir les appels API répétés si on a déjà chargé les données
+    if (dataFetched) return;
     
     const fetchLibraries = async () => {
       try {
@@ -94,12 +100,14 @@ const HomePage = () => {
           );
           
           console.log("Films récupérés:", moviesData);
-          setMovies(moviesData.Items || []);
-          
-          // Choisir un film au hasard pour le header
-          if (moviesData.Items && moviesData.Items.length > 0) {
-            const randomIndex = Math.floor(Math.random() * moviesData.Items.length);
-            setFeaturedItem(moviesData.Items[randomIndex]);
+          if (moviesData && moviesData.Items) {
+            setMovies(moviesData.Items);
+            
+            // Choisir un film au hasard pour le header
+            if (moviesData.Items.length > 0) {
+              const randomIndex = Math.floor(Math.random() * moviesData.Items.length);
+              setFeaturedItem(moviesData.Items[randomIndex]);
+            }
           }
         } else {
           console.log("Pas de bibliothèque de films trouvée");
@@ -116,22 +124,21 @@ const HomePage = () => {
           );
           
           console.log("Séries récupérées:", tvShowsData);
-          setTvShows(tvShowsData.Items || []);
-          
-          // Si aucun film n'a été sélectionné pour le header, choisir une série
-          if (!featuredItem && tvShowsData.Items && tvShowsData.Items.length > 0) {
-            const randomIndex = Math.floor(Math.random() * tvShowsData.Items.length);
-            setFeaturedItem(tvShowsData.Items[randomIndex]);
+          if (tvShowsData && tvShowsData.Items) {
+            setTvShows(tvShowsData.Items);
+            
+            // Si aucun film n'a été sélectionné pour le header, choisir une série
+            if (!featuredItem && tvShowsData.Items.length > 0) {
+              const randomIndex = Math.floor(Math.random() * tvShowsData.Items.length);
+              setFeaturedItem(tvShowsData.Items[randomIndex]);
+            }
           }
         } else {
           console.log("Pas de bibliothèque de séries trouvée");
         }
 
-        // Si aucun élément n'a été trouvé pour le header
-        if (!featuredItem && (movies.length > 0 || tvShows.length > 0)) {
-          // Utiliser le premier élément disponible
-          setFeaturedItem(movies[0] || tvShows[0]);
-        }
+        // Marquer les données comme chargées pour éviter les rechargements
+        setDataFetched(true);
       } catch (error) {
         console.error("Erreur lors du chargement des médias:", error);
         const errorMessage = error instanceof Error ? error.message : "Impossible de charger le contenu";
@@ -143,12 +150,17 @@ const HomePage = () => {
     };
     
     fetchLibraries();
-  }, [serverUrl, userInfo, navigate]);
+  }, [serverUrl, userInfo, navigate, dataFetched, featuredItem]);
   
   const handleLogout = () => {
     clearAuth();
     navigate('/');
     toast.success("Vous avez été déconnecté");
+  };
+  
+  const handleRefresh = () => {
+    setDataFetched(false); // Réinitialiser pour permettre un nouveau chargement
+    setIsLoading(true);
   };
   
   if (isLoading) {
@@ -165,7 +177,7 @@ const HomePage = () => {
         <div className="text-netflix-red text-xl font-bold mb-4">Erreur</div>
         <p className="text-white mb-6 text-center max-w-md">{error}</p>
         <div className="flex flex-col sm:flex-row gap-4">
-          <Button onClick={() => window.location.reload()} className="bg-netflix-red hover:bg-netflix-red/90">
+          <Button onClick={handleRefresh} className="bg-netflix-red hover:bg-netflix-red/90">
             Réessayer
           </Button>
           <Button onClick={handleLogout} variant="outline" className="border-netflix-red text-netflix-red hover:bg-netflix-red/10">
@@ -203,7 +215,7 @@ const HomePage = () => {
           <div className="p-8 text-center bg-netflix-gray/20 rounded-lg">
             <h2 className="text-xl font-bold mb-4">Aucun contenu trouvé</h2>
             <p className="mb-4">Assurez-vous d'avoir des médias dans votre serveur Jellyfin et que l'utilisateur dispose des permissions nécessaires.</p>
-            <Button onClick={() => window.location.reload()} className="bg-netflix-red hover:bg-netflix-red/90">
+            <Button onClick={handleRefresh} className="bg-netflix-red hover:bg-netflix-red/90">
               Actualiser la page
             </Button>
           </div>
