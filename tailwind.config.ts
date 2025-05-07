@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 
 export default {
@@ -52,6 +53,18 @@ export default {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))'
 				},
+				jellyfin: {
+					DEFAULT: '#00A4DC',
+					dark: '#0085B2',
+					light: '#40B9E4',
+				},
+				netflix: {
+					red: '#E50914',
+					dark: '#141414',
+					black: '#000000',
+					gray: '#181818',
+					light: '#B3B3B3',
+				},
 				sidebar: {
 					DEFAULT: 'hsl(var(--sidebar-background))',
 					foreground: 'hsl(var(--sidebar-foreground))',
@@ -84,11 +97,16 @@ export default {
 					to: {
 						height: '0'
 					}
-				}
+				},
+				'pulse-scale': {
+					'0%, 100%': { transform: 'scale(1)' },
+					'50%': { transform: 'scale(1.05)' },
+				},
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
-				'accordion-up': 'accordion-up 0.2s ease-out'
+				'accordion-up': 'accordion-up 0.2s ease-out',
+				'pulse-scale': 'pulse-scale 2s ease-in-out infinite',
 			}
 		}
 	},
