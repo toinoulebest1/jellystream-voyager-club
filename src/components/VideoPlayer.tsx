@@ -1,5 +1,5 @@
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Play, Volume2, VolumeX } from "lucide-react";
@@ -19,12 +19,30 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [retryCount, setRetryCount] = useState(0);
+  const [tryDirectPlay, setTryDirectPlay] = useState(false);
   const { getServerUrl, getUserInfo } = useJellyfinStore();
   
   const serverUrl = getServerUrl();
   const userInfo = getUserInfo();
   
-  // Générer l'URL de streaming
+  // Fonction pour générer l'URL avec gestion des erreurs renforcée
+  const generateStreamUrl = useCallback(() => {
+    if (!serverUrl || !userInfo || !itemId) {
+      return null;
+    }
+    
+    try {
+      // Alterner entre lecture directe et transcodage
+      const streamUrl = jellyfinApi.getStreamUrl(serverUrl, itemId, userInfo.AccessToken, tryDirectPlay);
+      console.log("URL de streaming générée:", streamUrl, tryDirectPlay ? "(direct)" : "(transcodé)");
+      return streamUrl;
+    } catch (error) {
+      console.error("Erreur lors de la génération de l'URL de streaming:", error);
+      return null;
+    }
+  }, [serverUrl, userInfo, itemId, tryDirectPlay]);
+  
+  // Générer l'URL de streaming avec gestion des erreurs améliorée
   useEffect(() => {
     if (!serverUrl || !userInfo || !itemId) {
       navigate('/home');
@@ -34,18 +52,25 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
     setIsLoading(true);
     setLoadError(null);
     
-    try {
-      // Générer l'URL de streaming avec un identifiant de session unique
-      const streamUrl = jellyfinApi.getStreamUrl(serverUrl, itemId, userInfo.AccessToken);
-      setVideoUrl(streamUrl);
-      
-      console.log("URL de streaming générée:", streamUrl);
-    } catch (error) {
-      console.error("Erreur lors de la génération de l'URL de streaming:", error);
+    // Générer une nouvelle URL de streaming
+    const newUrl = generateStreamUrl();
+    if (newUrl) {
+      setVideoUrl(newUrl);
+    } else {
       setLoadError("Impossible de générer l'URL de streaming");
+      setIsLoading(false);
       toast.error("Erreur de préparation de la vidéo");
     }
-  }, [itemId, serverUrl, userInfo, navigate, retryCount]);
+    
+    // Si plusieurs tentatives ont échoué, proposer de changer de méthode
+    if (retryCount > 2 && !tryDirectPlay) {
+      toast.info("Tentative avec une méthode alternative de lecture...");
+      setTryDirectPlay(true);
+    } else if (retryCount > 4 && tryDirectPlay) {
+      // Si les deux méthodes échouent après plusieurs tentatives
+      toast.error("Impossible de lire cette vidéo. Vérifiez votre serveur Jellyfin.");
+    }
+  }, [itemId, serverUrl, userInfo, navigate, retryCount, generateStreamUrl, tryDirectPlay]);
   
   // Configuration et gestion du lecteur vidéo
   useEffect(() => {
@@ -99,7 +124,13 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
       }
       
       setLoadError(errorMessage);
-      toast.error(errorMessage);
+      
+      // Sur erreur, essayer de changer de méthode de streaming
+      if (!tryDirectPlay && videoElement.error?.code === 4) {
+        setTryDirectPlay(true);
+      } else {
+        setRetryCount(prev => prev + 1);
+      }
     };
     
     const handleAbort = (e: Event) => {
@@ -124,22 +155,30 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
     
     // Fonction pour démarrer la lecture
     const startPlayback = () => {
-      videoElement.play()
-        .then(() => {
-          setIsPlaying(true);
-          if (isMuted) {
-            toast.info("Lecture démarrée en mode muet. Cliquez sur l'icône du son pour activer l'audio.");
-          }
-        })
-        .catch(error => {
-          console.error("Erreur lors de la lecture automatique:", error);
-          setIsPlaying(false);
-          if (error.name === "NotAllowedError") {
-            toast.error("La lecture automatique a été bloquée. Veuillez cliquer sur play pour démarrer.");
-          } else {
-            toast.error("Impossible de démarrer la lecture");
-          }
-        });
+      // Attendre un court instant pour éviter les problèmes de timing
+      setTimeout(() => {
+        videoElement.play()
+          .then(() => {
+            setIsPlaying(true);
+            if (isMuted) {
+              toast.info("Lecture démarrée en mode muet. Cliquez sur l'icône du son pour activer l'audio.");
+            }
+          })
+          .catch(error => {
+            console.error("Erreur lors de la lecture automatique:", error);
+            setIsPlaying(false);
+            if (error.name === "NotAllowedError") {
+              toast.error("La lecture automatique a été bloquée. Veuillez cliquer sur play pour démarrer.");
+            } else if (error.name === "AbortError") {
+              // Ne pas afficher de toast pour l'abandon, probablement intentionnel
+              console.log("Lecture abandonnée par l'utilisateur");
+            } else {
+              toast.error("Impossible de démarrer la lecture");
+              // Tenter une autre approche après échec
+              setRetryCount(prev => prev + 1);
+            }
+          });
+      }, 500);
     };
     
     // Définir un délai pour détecter les problèmes de chargement
@@ -148,6 +187,9 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
         setIsLoading(false);
         setLoadError("Le chargement de la vidéo prend trop de temps. Vérifiez votre connexion ou réessayez.");
         toast.error("Chargement vidéo trop long");
+        
+        // Tentative avec méthode alternative
+        setRetryCount(prev => prev + 1);
       }
     }, 15000); // 15 secondes
     
@@ -173,7 +215,7 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
         videoElement.src = "";
       }
     };
-  }, [videoUrl, isMuted]);
+  }, [videoUrl, isMuted, tryDirectPlay]);
   
   const handleBackClick = () => {
     navigate(-1);
@@ -188,7 +230,11 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
         .then(() => setIsPlaying(true))
         .catch(error => {
           console.error("Erreur lors de la lecture:", error);
-          toast.error("Impossible de démarrer la lecture");
+          if (error.name !== "AbortError") {
+            toast.error("Impossible de démarrer la lecture");
+            // Si la lecture échoue plusieurs fois, essayer une autre méthode
+            setRetryCount(prev => prev + 1);
+          }
         });
     } else {
       videoElement.pause();
@@ -226,8 +272,10 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
   };
   
   const handleRetry = () => {
+    // Alterner entre les méthodes de streaming
+    setTryDirectPlay(prevState => !prevState);
     setRetryCount(prev => prev + 1);
-    toast.info("Nouvelle tentative de chargement...");
+    toast.info("Nouvelle tentative avec une méthode alternative...");
   };
 
   return (
@@ -254,9 +302,12 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
           <div className="bg-black/80 p-6 rounded-lg text-white max-w-md text-center">
             <h3 className="text-xl mb-2">Erreur de chargement</h3>
             <p>{loadError}</p>
+            <p className="mt-2 text-sm text-gray-400">
+              Code erreur HTTP 500: Le serveur Jellyfin a rencontré un problème lors du traitement de la vidéo.
+            </p>
             <div className="flex gap-4 mt-4 justify-center">
               <Button onClick={handleRetry} variant="outline">
-                Réessayer
+                Essayer {tryDirectPlay ? "le transcodage" : "la lecture directe"}
               </Button>
               <Button onClick={handleBackClick}>
                 Retourner à la navigation
@@ -309,6 +360,15 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
               <path d="M16 4H20V8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               <path d="M16 20H20V16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
+          </Button>
+          
+          {/* Bouton pour basculer entre les méthodes de lecture */}
+          <Button 
+            variant="ghost" 
+            className="text-white hover:bg-white/20 text-xs"
+            onClick={handleRetry}
+          >
+            {tryDirectPlay ? "Direct" : "Transcodé"}
           </Button>
         </div>
       </div>

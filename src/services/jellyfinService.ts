@@ -179,42 +179,56 @@ export const jellyfinApi = {
     return `${serverUrl}/Items/${itemId}/Images/Backdrop?tag=${tag}&quality=90`;
   },
   
-  getStreamUrl: (serverUrl: string, itemId: string, token: string): string => {
-    // Créer une URL de streaming adaptée aux navigateurs web modernes
-    const url = new URL(`${serverUrl}/Videos/${itemId}/stream`);
-    
-    // Paramètres pour demander un transcodage compatible avec les navigateurs
-    url.searchParams.append("api_key", token);
-    
-    // Spécifier explicitement les codecs et conteneurs compatibles avec les navigateurs web
-    url.searchParams.append("VideoCodec", "h264");  // Codec vidéo largement supporté
-    url.searchParams.append("AudioCodec", "aac");   // Codec audio largement supporté
-    url.searchParams.append("Container", "mp4");    // Format conteneur compatible
-    url.searchParams.append("TranscodingContainer", "mp4");
-    
-    // Résolution maximale pour éviter une consommation excessive de bande passante
-    url.searchParams.append("MaxWidth", "1920");
-    url.searchParams.append("MaxHeight", "1080");
-    
-    // Identifiants et métadonnées
-    url.searchParams.append("MediaSourceId", itemId);
-    url.searchParams.append("DeviceId", "JellyStream-Web");
-    url.searchParams.append("PlaySessionId", `jellyfin-${Date.now()}`);
-    url.searchParams.append("TranscodingMaxAudioChannels", "2");
-    
-    // Forcer le transcodage pour garantir la compatibilité
-    url.searchParams.append("allowDirectPlay", "false"); 
-    url.searchParams.append("allowDirectStream", "false");
-    
-    // Paramètres pour améliorer la compatibilité de streaming
-    url.searchParams.append("EnableSubtitles", "false"); // Désactiver les sous-titres pour simplifier le transcodage
-    url.searchParams.append("SubtitleMethod", "Encode"); // Si des sous-titres sont demandés, les encoder dans la vidéo
-    url.searchParams.append("StartTimeTicks", "0"); // Démarrer depuis le début
-    
-    // Qualité adaptée au streaming web
-    url.searchParams.append("VideoBitrate", "3000000"); // 3 Mbps pour un bon compromis qualité/fluidité
-    url.searchParams.append("AudioBitrate", "128000"); // 128 kbps pour l'audio
-    
-    return url.toString();
+  getStreamUrl: (serverUrl: string, itemId: string, token: string, isDirectPlay = false): string => {
+    if (isDirectPlay) {
+      // Option 1: Essai en lecture directe pour les formats compatibles
+      const url = new URL(`${serverUrl}/Videos/${itemId}/stream`);
+      url.searchParams.append("api_key", token);
+      url.searchParams.append("static", "true");
+      url.searchParams.append("MediaSourceId", itemId);
+      return url.toString();
+    } else {
+      // Option 2: Transcodage avec paramètres plus permissifs
+      const url = new URL(`${serverUrl}/Videos/${itemId}/stream.m3u8`);
+      
+      // Utiliser HLS (HTTP Live Streaming) qui est mieux supporté
+      url.searchParams.append("api_key", token);
+      url.searchParams.append("PlaySessionId", `jellyfin-${Date.now()}`);
+      url.searchParams.append("MediaSourceId", itemId);
+      url.searchParams.append("DeviceId", "JellyStream-Web");
+      url.searchParams.append("TranscodingMaxAudioChannels", "2");
+      
+      // Paramètres de transcodage plus simples
+      url.searchParams.append("Codec", "h264");
+      url.searchParams.append("Container", "ts");
+      url.searchParams.append("AudioCodec", "aac");
+      
+      // Qualité vidéo ajustable
+      url.searchParams.append("VideoBitrate", "2000000"); // 2 Mbps pour être plus léger
+      url.searchParams.append("AudioBitrate", "128000");
+      url.searchParams.append("MaxVideoBitDepth", "8");
+      
+      // Désactiver les options problématiques
+      url.searchParams.append("SubtitleMethod", "None");
+      url.searchParams.append("EnableSubtitles", "false");
+      url.searchParams.append("RequireAvc", "true");
+      
+      return url.toString();
+    }
+  },
+  
+  // Nouvelle fonction pour tester la compatibilité d'un format avec le navigateur
+  testStreamFormat: async (url: string): Promise<boolean> => {
+    try {
+      const response = await fetch(url, {
+        method: 'HEAD',
+        signal: AbortSignal.timeout(5000), // Timeout après 5s
+      });
+      
+      return response.ok && response.headers.get('Content-Type')?.includes('video');
+    } catch (error) {
+      console.log("Test de format échoué:", error);
+      return false;
+    }
   }
 };
