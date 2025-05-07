@@ -31,7 +31,7 @@ export interface JellyfinItem {
   RunTimeTicks?: number;
   SeriesName?: string;
   ParentId?: string;
-  // Ajout des propriétés manquantes
+  // Propriétés pour les genres et studios
   Genres?: string[];
   Studios?: { Name: string; Id: string; }[];
 }
@@ -180,6 +180,15 @@ export const jellyfinApi = {
   },
   
   getStreamUrl: (serverUrl: string, itemId: string, token: string): string => {
-    return `${serverUrl}/Videos/${itemId}/stream?static=true&MediaSourceId=${itemId}&api_key=${token}`;
+    // Création d'une URL de streaming avec le token d'authentification approprié
+    // et les paramètres nécessaires pour une lecture fluide
+    const url = new URL(`${serverUrl}/Videos/${itemId}/stream`);
+    url.searchParams.append("static", "true");
+    url.searchParams.append("MediaSourceId", itemId);
+    url.searchParams.append("api_key", token);
+    url.searchParams.append("allowDirectPlay", "true"); 
+    url.searchParams.append("allowDirectStream", "true");
+    
+    return url.toString();
   }
 };
