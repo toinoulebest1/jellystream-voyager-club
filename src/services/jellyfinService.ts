@@ -38,6 +38,16 @@ export interface JellyfinLibrary {
   TotalRecordCount: number;
 }
 
+// Interface pour les options de requête
+export interface ItemsOptions {
+  Limit?: string;
+  SortBy?: string;
+  SortOrder?: string;
+  Filters?: string;
+  Fields?: string;
+  [key: string]: string | undefined;
+}
+
 // Custom hook pour stocker les informations du serveur dans localStorage
 export const useJellyfinStore = () => {
   const saveServerInfo = (info: JellyfinCredentials) => {
@@ -111,10 +121,16 @@ export const jellyfinApi = {
     }
   },
   
-  getItems: async (serverUrl: string, userId: string, token: string, parentId?: string): Promise<JellyfinLibrary> => {
+  getItems: async (
+    serverUrl: string, 
+    userId: string, 
+    token: string, 
+    parentId?: string, 
+    options?: ItemsOptions
+  ): Promise<JellyfinLibrary> => {
     try {
-      // Paramètres pour la requête des items
-      const params = new URLSearchParams({
+      // Paramètres par défaut pour la requête des items
+      const defaultParams: Record<string, string> = {
         ParentId: parentId || '',
         UserId: userId,
         IncludeItemTypes: parentId ? 'Movie,Episode' : 'CollectionFolder',
@@ -123,6 +139,12 @@ export const jellyfinApi = {
         ImageTypeLimit: '1',
         EnableImageTypes: 'Primary,Backdrop,Thumb',
         Limit: '50',
+      };
+
+      // Fusionner les paramètres par défaut avec les options fournies
+      const params = new URLSearchParams({
+        ...defaultParams,
+        ...(options || {}),
       });
       
       const itemsUrl = `${serverUrl}/Items?${params.toString()}`;

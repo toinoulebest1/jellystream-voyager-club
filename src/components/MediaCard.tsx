@@ -36,29 +36,35 @@ export const MediaCard = ({ item }: MediaCardProps) => {
 
   return (
     <div 
-      className="movie-card cursor-pointer"
+      className="cursor-pointer rounded-md overflow-hidden bg-netflix-gray-dark/50 transition-transform hover:scale-105"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={handleNavigateToDetails}
     >
-      <img 
-        src={imageUrl} 
-        alt={item.Name}
-        className="movie-card-image"
-        loading="lazy"
-      />
-      <div className={`movie-card-overlay ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
-        <h3 className="font-bold text-white mb-1">{item.Name}</h3>
-        {item.ProductionYear && (
-          <p className="text-xs text-gray-300 mb-2">{item.ProductionYear}</p>
+      <div className="relative aspect-[2/3] w-full">
+        <img 
+          src={imageUrl} 
+          alt={item.Name}
+          className="w-full h-full object-cover"
+          loading="lazy"
+        />
+        {isHovered && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+            <Button 
+              size="sm" 
+              className="bg-netflix-red hover:bg-netflix-red/90 text-white rounded-full w-10 h-10 p-2"
+              onClick={handlePlayMedia}
+            >
+              <Play className="h-4 w-4" />
+            </Button>
+          </div>
         )}
-        <Button 
-          size="sm" 
-          className="bg-netflix-red hover:bg-netflix-red/90 text-white rounded-full w-10 h-10 p-2"
-          onClick={handlePlayMedia}
-        >
-          <Play className="h-4 w-4" />
-        </Button>
+      </div>
+      <div className="p-2">
+        <h3 className="font-bold text-sm text-white truncate" title={item.Name}>{item.Name}</h3>
+        {item.ProductionYear && (
+          <p className="text-xs text-gray-300">{item.ProductionYear}</p>
+        )}
       </div>
     </div>
   );

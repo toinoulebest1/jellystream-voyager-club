@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -77,13 +76,21 @@ const HomePage = () => {
           (item) => item.Name === "Séries" || item.Name === "TV Shows" || item.Name === "Series"
         );
         
-        // Récupérer les films
+        // Limiter le nombre de films récupérés pour éviter les problèmes de performance
+        const fetchOptions = {
+          Limit: '30', // Limite à 30 éléments
+          SortBy: 'DateCreated',
+          SortOrder: 'Descending'
+        };
+        
+        // Récupérer les films (limités)
         if (movieLibrary) {
           const moviesData = await jellyfinApi.getItems(
             serverUrl,
             userInfo.Id,
             userInfo.AccessToken,
-            movieLibrary.Id
+            movieLibrary.Id,
+            fetchOptions
           );
           
           console.log("Films récupérés:", moviesData);
@@ -98,13 +105,14 @@ const HomePage = () => {
           console.log("Pas de bibliothèque de films trouvée");
         }
         
-        // Récupérer les séries
+        // Récupérer les séries (limitées)
         if (tvLibrary) {
           const tvShowsData = await jellyfinApi.getItems(
             serverUrl,
             userInfo.Id,
             userInfo.AccessToken,
-            tvLibrary.Id
+            tvLibrary.Id,
+            fetchOptions
           );
           
           console.log("Séries récupérées:", tvShowsData);
