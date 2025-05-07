@@ -32,20 +32,10 @@ const PlayerPage = () => {
     
     try {
       hlsSupport = video.canPlayType('application/vnd.apple.mpegurl') !== '';
+      console.log("Support HLS natif:", hlsSupport ? "Oui" : "Non (HLS.js sera utilisé)");
     } catch (e) {
       console.log("Erreur lors de la vérification du support HLS:", e);
     }
-    
-    console.log("Support HLS natif:", hlsSupport ? "Oui" : "Non (HLS.js sera utilisé)");
-    
-    // Vérifier si le navigateur prend en charge MKV
-    try {
-      const mkvSupport = video.canPlayType('video/x-matroska') !== '';
-      console.log("Support MKV:", mkvSupport ? "Oui" : "Non");
-    } catch (e) {
-      console.log("MKV probablement non supporté");
-    }
-    
   }, [id, serverUrl, userInfo]);
 
   if (!id) return null;

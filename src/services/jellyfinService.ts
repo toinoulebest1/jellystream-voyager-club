@@ -185,7 +185,7 @@ export const jellyfinApi = {
     return `${serverUrl}/Items/${itemId}/Images/Backdrop?tag=${tag}&quality=90`;
   },
   
-  // Fonction améliorée pour obtenir l'URL de streaming en spécifiant la méthode
+  // Fonction améliorée pour obtenir l'URL de streaming
   getStreamUrl: (
     serverUrl: string, 
     itemId: string, 
@@ -232,16 +232,15 @@ export const jellyfinApi = {
         hlsUrl.searchParams.append("MediaSourceId", itemId);
         hlsUrl.searchParams.append("DeviceId", "JellyStream-Web");
         hlsUrl.searchParams.append("TranscodingMaxAudioChannels", "2");
-        hlsUrl.searchParams.append("RequireAvc", "true");
-        hlsUrl.searchParams.append("SegmentContainer", "ts");
-        hlsUrl.searchParams.append("MinSegments", "1");
-        hlsUrl.searchParams.append("BreakOnNonKeyFrames", "true");
-        hlsUrl.searchParams.append("h264-profile", "high,main,baseline");
-        hlsUrl.searchParams.append("h264-level", "41");
-        hlsUrl.searchParams.append("VideoBitrate", "5000000");
-        hlsUrl.searchParams.append("AudioBitrate", "192000");
-        hlsUrl.searchParams.append("EnableSubtitles", "false");
+        hlsUrl.searchParams.append("Codec", "h264");
+        hlsUrl.searchParams.append("Container", "ts");
+        hlsUrl.searchParams.append("AudioCodec", "aac");
+        hlsUrl.searchParams.append("VideoBitrate", "2000000");
+        hlsUrl.searchParams.append("AudioBitrate", "128000");
+        hlsUrl.searchParams.append("MaxVideoBitDepth", "8");
         hlsUrl.searchParams.append("SubtitleMethod", "None");
+        hlsUrl.searchParams.append("EnableSubtitles", "false");
+        hlsUrl.searchParams.append("RequireAvc", "true");
         return hlsUrl.toString();
     }
   },
