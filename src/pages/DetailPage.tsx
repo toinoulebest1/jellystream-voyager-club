@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,11 @@ const DetailPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  // Utiliser useRef pour suivre si le composant est monté
+  const isMounted = useRef(true);
+  // Flag pour éviter les appels multiples
+  const dataFetched = useRef(false);
+  
   const navigate = useNavigate();
   const { getServerUrl, getUserInfo } = useJellyfinStore();
   
@@ -21,11 +26,17 @@ const DetailPage = () => {
   const userInfo = getUserInfo();
   
   useEffect(() => {
+    // Définir le composant comme monté
+    isMounted.current = true;
+    
     if (!serverUrl || !userInfo || !id) {
       toast.error("Informations de connexion manquantes");
       navigate('/home');
       return;
     }
+    
+    // Si les données ont déjà été récupérées, ne pas refaire l'appel
+    if (dataFetched.current) return;
     
     const fetchItemDetails = async () => {
       try {
@@ -36,7 +47,7 @@ const DetailPage = () => {
         
         // Récupérer les détails de l'élément
         const response = await fetch(
-          `${serverUrl}/Items/${id}?api_key=${userInfo.AccessToken}`,
+          `${serverUrl}/Items/${id}?UserId=${userInfo.Id}&api_key=${userInfo.AccessToken}`,
           {
             headers: {
               'X-Emby-Token': userInfo.AccessToken,
@@ -50,18 +61,33 @@ const DetailPage = () => {
         
         const itemData = await response.json();
         console.log("Détails récupérés:", itemData);
-        setItem(itemData);
+        
+        // Ne mettre à jour l'état que si le composant est toujours monté
+        if (isMounted.current) {
+          setItem(itemData);
+          dataFetched.current = true;
+        }
       } catch (error) {
         console.error("Erreur lors du chargement des détails:", error);
         const errorMessage = error instanceof Error ? error.message : "Impossible de charger les détails";
-        setError(errorMessage);
-        toast.error(errorMessage);
+        
+        if (isMounted.current) {
+          setError(errorMessage);
+          toast.error(errorMessage);
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted.current) {
+          setIsLoading(false);
+        }
       }
     };
     
     fetchItemDetails();
+    
+    // Nettoyer l'effet lors du démontage du composant
+    return () => {
+      isMounted.current = false;
+    };
   }, [id, serverUrl, userInfo, navigate]);
   
   const handlePlayMedia = () => {
