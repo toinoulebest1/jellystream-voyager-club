@@ -1,4 +1,3 @@
-
 import { toast } from 'sonner';
 
 // Types basiques pour Jellyfin API
@@ -49,6 +48,13 @@ export interface ItemsOptions {
   Filters?: string;
   Fields?: string;
   [key: string]: string | undefined;
+}
+
+// Enum pour les méthodes de streaming
+export enum StreamingMethod {
+  HLS = "hls",
+  MP4 = "mp4",
+  DIRECT = "direct"
 }
 
 // Custom hook pour stocker les informations du serveur dans localStorage
@@ -179,53 +185,76 @@ export const jellyfinApi = {
     return `${serverUrl}/Items/${itemId}/Images/Backdrop?tag=${tag}&quality=90`;
   },
   
-  getStreamUrl: (serverUrl: string, itemId: string, token: string, isDirectPlay = false): string => {
-    if (isDirectPlay) {
-      // Option 1: Essai en lecture directe pour les formats compatibles
-      const url = new URL(`${serverUrl}/Videos/${itemId}/stream`);
-      url.searchParams.append("api_key", token);
-      url.searchParams.append("static", "true");
-      url.searchParams.append("MediaSourceId", itemId);
-      return url.toString();
-    } else {
-      // Option 2: Transcodage avec paramètres plus permissifs
-      const url = new URL(`${serverUrl}/Videos/${itemId}/stream.m3u8`);
-      
-      // Utiliser HLS (HTTP Live Streaming) qui est mieux supporté
-      url.searchParams.append("api_key", token);
-      url.searchParams.append("PlaySessionId", `jellyfin-${Date.now()}`);
-      url.searchParams.append("MediaSourceId", itemId);
-      url.searchParams.append("DeviceId", "JellyStream-Web");
-      url.searchParams.append("TranscodingMaxAudioChannels", "2");
-      
-      // Paramètres de transcodage plus simples
-      url.searchParams.append("Codec", "h264");
-      url.searchParams.append("Container", "ts");
-      url.searchParams.append("AudioCodec", "aac");
-      
-      // Qualité vidéo ajustable
-      url.searchParams.append("VideoBitrate", "2000000"); // 2 Mbps pour être plus léger
-      url.searchParams.append("AudioBitrate", "128000");
-      url.searchParams.append("MaxVideoBitDepth", "8");
-      
-      // Désactiver les options problématiques
-      url.searchParams.append("SubtitleMethod", "None");
-      url.searchParams.append("EnableSubtitles", "false");
-      url.searchParams.append("RequireAvc", "true");
-      
-      return url.toString();
+  // Fonction améliorée pour obtenir l'URL de streaming en spécifiant la méthode
+  getStreamUrl: (
+    serverUrl: string, 
+    itemId: string, 
+    token: string, 
+    method: StreamingMethod = StreamingMethod.HLS
+  ): string => {
+    const playSessionId = `jellyfin-${Date.now()}`;
+    
+    switch (method) {
+      case StreamingMethod.DIRECT:
+        // Lecture directe sans transcodage
+        const directUrl = new URL(`${serverUrl}/Videos/${itemId}/stream`);
+        directUrl.searchParams.append("api_key", token);
+        directUrl.searchParams.append("static", "true");
+        directUrl.searchParams.append("MediaSourceId", itemId);
+        return directUrl.toString();
+        
+      case StreamingMethod.MP4:
+        // Transcodage MP4 pour compatibilité maximale
+        const mp4Url = new URL(`${serverUrl}/Videos/${itemId}/stream`);
+        mp4Url.searchParams.append("api_key", token);
+        mp4Url.searchParams.append("PlaySessionId", playSessionId);
+        mp4Url.searchParams.append("MediaSourceId", itemId);
+        mp4Url.searchParams.append("DeviceId", "JellyStream-Web");
+        mp4Url.searchParams.append("VideoCodec", "h264");
+        mp4Url.searchParams.append("AudioCodec", "aac");
+        mp4Url.searchParams.append("Container", "mp4");
+        mp4Url.searchParams.append("TranscodingContainer", "mp4");
+        mp4Url.searchParams.append("MaxWidth", "1920");
+        mp4Url.searchParams.append("MaxHeight", "1080");
+        mp4Url.searchParams.append("TranscodingMaxAudioChannels", "2");
+        mp4Url.searchParams.append("VideoBitrate", "3000000");
+        mp4Url.searchParams.append("AudioBitrate", "128000");
+        mp4Url.searchParams.append("EnableSubtitles", "false");
+        mp4Url.searchParams.append("SubtitleMethod", "Encode");
+        return mp4Url.toString();
+        
+      case StreamingMethod.HLS:
+      default:
+        // HLS (HTTP Live Streaming) pour téléchargement progressif
+        const hlsUrl = new URL(`${serverUrl}/Videos/${itemId}/main.m3u8`);
+        hlsUrl.searchParams.append("api_key", token);
+        hlsUrl.searchParams.append("PlaySessionId", playSessionId);
+        hlsUrl.searchParams.append("MediaSourceId", itemId);
+        hlsUrl.searchParams.append("DeviceId", "JellyStream-Web");
+        hlsUrl.searchParams.append("TranscodingMaxAudioChannels", "2");
+        hlsUrl.searchParams.append("RequireAvc", "true");
+        hlsUrl.searchParams.append("SegmentContainer", "ts");
+        hlsUrl.searchParams.append("MinSegments", "1");
+        hlsUrl.searchParams.append("BreakOnNonKeyFrames", "true");
+        hlsUrl.searchParams.append("h264-profile", "high,main,baseline");
+        hlsUrl.searchParams.append("h264-level", "41");
+        hlsUrl.searchParams.append("VideoBitrate", "5000000");
+        hlsUrl.searchParams.append("AudioBitrate", "192000");
+        hlsUrl.searchParams.append("EnableSubtitles", "false");
+        hlsUrl.searchParams.append("SubtitleMethod", "None");
+        return hlsUrl.toString();
     }
   },
   
-  // Nouvelle fonction pour tester la compatibilité d'un format avec le navigateur
+  // Test de format vidéo
   testStreamFormat: async (url: string): Promise<boolean> => {
     try {
       const response = await fetch(url, {
         method: 'HEAD',
-        signal: AbortSignal.timeout(5000), // Timeout après 5s
+        signal: AbortSignal.timeout(5000),
       });
       
-      return response.ok && response.headers.get('Content-Type')?.includes('video');
+      return response.ok;
     } catch (error) {
       console.log("Test de format échoué:", error);
       return false;

@@ -2,9 +2,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Play, Volume2, VolumeX } from "lucide-react";
-import { useJellyfinStore, jellyfinApi } from "@/services/jellyfinService";
+import { ArrowLeft, Play, Volume2, VolumeX, Repeat } from "lucide-react";
+import { useJellyfinStore, jellyfinApi, StreamingMethod } from "@/services/jellyfinService";
 import { toast } from "sonner";
+import Hls from "hls.js";
 
 interface VideoPlayerProps {
   itemId: string;
@@ -12,6 +13,7 @@ interface VideoPlayerProps {
 
 export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
   const navigate = useNavigate();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
@@ -19,30 +21,45 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [retryCount, setRetryCount] = useState(0);
-  const [tryDirectPlay, setTryDirectPlay] = useState(false);
+  const [currentMethod, setCurrentMethod] = useState<StreamingMethod>(StreamingMethod.HLS);
   const { getServerUrl, getUserInfo } = useJellyfinStore();
   
   const serverUrl = getServerUrl();
   const userInfo = getUserInfo();
   
-  // Fonction pour générer l'URL avec gestion des erreurs renforcée
+  // Fonction pour générer l'URL avec la méthode sélectionnée
   const generateStreamUrl = useCallback(() => {
     if (!serverUrl || !userInfo || !itemId) {
       return null;
     }
     
     try {
-      // Alterner entre lecture directe et transcodage
-      const streamUrl = jellyfinApi.getStreamUrl(serverUrl, itemId, userInfo.AccessToken, tryDirectPlay);
-      console.log("URL de streaming générée:", streamUrl, tryDirectPlay ? "(direct)" : "(transcodé)");
+      const streamUrl = jellyfinApi.getStreamUrl(serverUrl, itemId, userInfo.AccessToken, currentMethod);
+      console.log(`URL de streaming générée: ${streamUrl} (${currentMethod})`, retryCount);
       return streamUrl;
     } catch (error) {
       console.error("Erreur lors de la génération de l'URL de streaming:", error);
       return null;
     }
-  }, [serverUrl, userInfo, itemId, tryDirectPlay]);
+  }, [serverUrl, userInfo, itemId, currentMethod, retryCount]);
   
-  // Générer l'URL de streaming avec gestion des erreurs améliorée
+  // Cycle entre les différentes méthodes de streaming
+  const cycleStreamingMethod = useCallback(() => {
+    setCurrentMethod((prev) => {
+      switch (prev) {
+        case StreamingMethod.HLS:
+          return StreamingMethod.MP4;
+        case StreamingMethod.MP4:
+          return StreamingMethod.DIRECT;
+        case StreamingMethod.DIRECT:
+        default:
+          return StreamingMethod.HLS;
+      }
+    });
+    setRetryCount(prev => prev + 1);
+  }, []);
+  
+  // Générer l'URL de streaming
   useEffect(() => {
     if (!serverUrl || !userInfo || !itemId) {
       navigate('/home');
@@ -61,40 +78,110 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
       setIsLoading(false);
       toast.error("Erreur de préparation de la vidéo");
     }
-    
-    // Si plusieurs tentatives ont échoué, proposer de changer de méthode
-    if (retryCount > 2 && !tryDirectPlay) {
-      toast.info("Tentative avec une méthode alternative de lecture...");
-      setTryDirectPlay(true);
-    } else if (retryCount > 4 && tryDirectPlay) {
-      // Si les deux méthodes échouent après plusieurs tentatives
-      toast.error("Impossible de lire cette vidéo. Vérifiez votre serveur Jellyfin.");
-    }
-  }, [itemId, serverUrl, userInfo, navigate, retryCount, generateStreamUrl, tryDirectPlay]);
+  }, [itemId, serverUrl, userInfo, navigate, currentMethod, generateStreamUrl]);
   
-  // Configuration et gestion du lecteur vidéo
+  // Nettoyage de l'instance HLS lors du démontage du composant
+  const destroyHls = useCallback(() => {
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+  }, []);
+  
+  // Configuration et gestion du lecteur vidéo avec HLS.js
   useEffect(() => {
     if (!videoUrl) return;
     
     const videoElement = videoRef.current;
     if (!videoElement) return;
     
-    // Configuration du lecteur vidéo
+    setIsLoading(true);
+    setLoadError(null);
+    
+    // Configurer le lecteur
     videoElement.crossOrigin = "anonymous";
     videoElement.muted = isMuted;
-    videoElement.src = videoUrl;
     
     // Variables pour suivre l'état du chargement
     let loadingTimeout: ReturnType<typeof setTimeout>;
     let isVideoPlaying = false;
     
-    // Gestionnaires d'événements pour surveiller le cycle de vie de la vidéo
+    // Nettoyer toute instance HLS précédente
+    destroyHls();
+    
+    // Déterminer comment charger la vidéo
+    const isHlsUrl = videoUrl.includes('.m3u8');
+    
+    const initializePlayer = () => {
+      // Pour les flux HLS, utiliser hls.js si disponible
+      if (isHlsUrl && Hls.isSupported()) {
+        console.log("Initialisation du lecteur HLS.js");
+        
+        const hls = new Hls({
+          maxBufferLength: 30,
+          maxMaxBufferLength: 600,
+          maxBufferSize: 60 * 1000 * 1000, // 60MB
+          maxBufferHole: 0.5,
+          lowLatencyMode: false,
+          debug: false
+        });
+        
+        hls.attachMedia(videoElement);
+        hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+          console.log("HLS.js: Media attachée");
+          hls.loadSource(videoUrl);
+        });
+        
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          console.log("HLS.js: Manifest analysé, démarrage de la lecture");
+          startPlayback();
+        });
+        
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (data.fatal) {
+            console.error("Erreur HLS.js fatale:", data.type, data.details);
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                toast.error("Erreur réseau lors du chargement de la vidéo");
+                retryHls(hls, videoUrl);
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                toast.error("Erreur de décodage du média");
+                retryHls(hls, videoUrl);
+                break;
+              default:
+                // Erreur fatale irrécupérable
+                destroyHls();
+                setLoadError(`Erreur HLS: ${data.details}`);
+                cycleStreamingMethod(); // Essayer une autre méthode
+                break;
+            }
+          }
+        });
+        
+        // Stocker la référence HLS
+        hlsRef.current = hls;
+      } 
+      else {
+        // Méthode standard pour les formats non-HLS
+        console.log("Utilisation du lecteur HTML5 standard");
+        videoElement.src = videoUrl;
+        videoElement.load();
+      }
+    };
+    
+    // Tentatives pour HLS.js
+    const retryHls = (hls: Hls, url: string) => {
+      hls.loadSource(url);
+      hls.startLoad();
+    };
+    
+    // Gestionnaires d'événements pour le lecteur vidéo
     const handleCanPlay = () => {
       console.log("Vidéo prête à être lue");
       setIsLoading(false);
       clearTimeout(loadingTimeout);
       
-      // Si la lecture n'a pas encore commencé, essayer de démarrer
       if (!isVideoPlaying && videoElement.paused) {
         startPlayback();
       }
@@ -107,29 +194,26 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
       
       let errorMessage = "Erreur de lecture de la vidéo";
       if (videoElement.error) {
-        switch (videoElement.error.code) {
-          case 1: // MEDIA_ERR_ABORTED
-            errorMessage = "La lecture a été interrompue";
-            break;
-          case 2: // MEDIA_ERR_NETWORK
-            errorMessage = "Problème réseau pendant le chargement de la vidéo";
-            break;
-          case 3: // MEDIA_ERR_DECODE
-            errorMessage = "Format vidéo non supporté ou corrompu";
-            break;
-          case 4: // MEDIA_ERR_SRC_NOT_SUPPORTED
-            errorMessage = "Ce format vidéo n'est pas supporté par votre navigateur";
-            break;
-        }
+        errorMessage = getVideoErrorMessage(videoElement.error);
       }
       
       setLoadError(errorMessage);
-      
-      // Sur erreur, essayer de changer de méthode de streaming
-      if (!tryDirectPlay && videoElement.error?.code === 4) {
-        setTryDirectPlay(true);
-      } else {
-        setRetryCount(prev => prev + 1);
+      // Essayer une autre méthode après une erreur
+      cycleStreamingMethod();
+    };
+    
+    const getVideoErrorMessage = (error: MediaError): string => {
+      switch (error.code) {
+        case 1: // MEDIA_ERR_ABORTED
+          return "La lecture a été interrompue";
+        case 2: // MEDIA_ERR_NETWORK
+          return "Problème réseau pendant le chargement de la vidéo";
+        case 3: // MEDIA_ERR_DECODE
+          return "Format vidéo non supporté ou corrompu";
+        case 4: // MEDIA_ERR_SRC_NOT_SUPPORTED
+          return "Ce format vidéo n'est pas supporté par votre navigateur";
+        default:
+          return `Erreur de lecture (code ${error.code})`;
       }
     };
     
@@ -153,9 +237,7 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
       toast.info("La vidéo est terminée");
     };
     
-    // Fonction pour démarrer la lecture
     const startPlayback = () => {
-      // Attendre un court instant pour éviter les problèmes de timing
       setTimeout(() => {
         videoElement.play()
           .then(() => {
@@ -169,13 +251,8 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
             setIsPlaying(false);
             if (error.name === "NotAllowedError") {
               toast.error("La lecture automatique a été bloquée. Veuillez cliquer sur play pour démarrer.");
-            } else if (error.name === "AbortError") {
-              // Ne pas afficher de toast pour l'abandon, probablement intentionnel
-              console.log("Lecture abandonnée par l'utilisateur");
             } else {
               toast.error("Impossible de démarrer la lecture");
-              // Tenter une autre approche après échec
-              setRetryCount(prev => prev + 1);
             }
           });
       }, 500);
@@ -183,13 +260,10 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
     
     // Définir un délai pour détecter les problèmes de chargement
     loadingTimeout = setTimeout(() => {
-      if (videoElement.readyState < 3) { // HAVE_FUTURE_DATA
+      if (videoElement.readyState < 3) {
         setIsLoading(false);
-        setLoadError("Le chargement de la vidéo prend trop de temps. Vérifiez votre connexion ou réessayez.");
-        toast.error("Chargement vidéo trop long");
-        
-        // Tentative avec méthode alternative
-        setRetryCount(prev => prev + 1);
+        setLoadError("Le chargement de la vidéo prend trop de temps. Tentative avec une autre méthode...");
+        cycleStreamingMethod();
       }
     }, 15000); // 15 secondes
     
@@ -200,6 +274,9 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
     videoElement.addEventListener("play", handlePlay);
     videoElement.addEventListener("pause", handlePause);
     videoElement.addEventListener("ended", handleEnded);
+    
+    // Initialiser le lecteur
+    initializePlayer();
     
     // Nettoyage lors du démontage du composant
     return () => {
@@ -213,9 +290,11 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
         videoElement.removeEventListener("ended", handleEnded);
         videoElement.pause();
         videoElement.src = "";
+        videoElement.load();
       }
+      destroyHls();
     };
-  }, [videoUrl, isMuted, tryDirectPlay]);
+  }, [videoUrl, isMuted, destroyHls, cycleStreamingMethod]);
   
   const handleBackClick = () => {
     navigate(-1);
@@ -232,8 +311,6 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
           console.error("Erreur lors de la lecture:", error);
           if (error.name !== "AbortError") {
             toast.error("Impossible de démarrer la lecture");
-            // Si la lecture échoue plusieurs fois, essayer une autre méthode
-            setRetryCount(prev => prev + 1);
           }
         });
     } else {
@@ -272,10 +349,8 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
   };
   
   const handleRetry = () => {
-    // Alterner entre les méthodes de streaming
-    setTryDirectPlay(prevState => !prevState);
-    setRetryCount(prev => prev + 1);
-    toast.info("Nouvelle tentative avec une méthode alternative...");
+    cycleStreamingMethod();
+    toast.info(`Tentative avec ${currentMethod === StreamingMethod.HLS ? "MP4" : currentMethod === StreamingMethod.MP4 ? "lecture directe" : "streaming HLS"}...`);
   };
 
   return (
@@ -303,11 +378,13 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
             <h3 className="text-xl mb-2">Erreur de chargement</h3>
             <p>{loadError}</p>
             <p className="mt-2 text-sm text-gray-400">
-              Code erreur HTTP 500: Le serveur Jellyfin a rencontré un problème lors du traitement de la vidéo.
+              Format vidéo non supporté ou problème avec le serveur Jellyfin.
             </p>
             <div className="flex gap-4 mt-4 justify-center">
-              <Button onClick={handleRetry} variant="outline">
-                Essayer {tryDirectPlay ? "le transcodage" : "la lecture directe"}
+              <Button onClick={handleRetry} variant="outline" className="flex items-center">
+                <Repeat className="mr-2 h-4 w-4" />
+                Essayer {currentMethod === StreamingMethod.HLS ? "MP4" : 
+                         currentMethod === StreamingMethod.MP4 ? "Direct" : "HLS"}
               </Button>
               <Button onClick={handleBackClick}>
                 Retourner à la navigation
@@ -362,13 +439,12 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
             </svg>
           </Button>
           
-          {/* Bouton pour basculer entre les méthodes de lecture */}
           <Button 
             variant="ghost" 
             className="text-white hover:bg-white/20 text-xs"
             onClick={handleRetry}
           >
-            {tryDirectPlay ? "Direct" : "Transcodé"}
+            Format: {currentMethod}
           </Button>
         </div>
       </div>
