@@ -16,6 +16,7 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const { getServerUrl, getUserInfo } = useJellyfinStore();
   
   const serverUrl = getServerUrl();
@@ -27,50 +28,65 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
       return;
     }
     
+    try {
+      // Générer l'URL de streaming
+      const streamUrl = jellyfinApi.getStreamUrl(serverUrl, itemId, userInfo.AccessToken);
+      setVideoUrl(streamUrl);
+      
+      console.log("URL de streaming générée:", streamUrl);
+    } catch (error) {
+      console.error("Erreur lors de la génération de l'URL de streaming:", error);
+      setLoadError("Impossible de générer l'URL de streaming");
+      toast.error("Erreur de préparation de la vidéo");
+    }
+  }, [itemId, serverUrl, userInfo, navigate]);
+  
+  useEffect(() => {
+    if (!videoUrl) return;
+    
     // Configuration du lecteur vidéo
     const videoElement = videoRef.current;
     if (videoElement) {
-      try {
-        const streamUrl = jellyfinApi.getStreamUrl(serverUrl, itemId, userInfo.AccessToken);
-        
-        // Configuration des attributs CORS et autres attributs importants
-        videoElement.crossOrigin = "anonymous";
-        videoElement.src = streamUrl;
-        videoElement.muted = true;
-        
-        // Gestionnaires d'événements pour surveiller les erreurs de chargement
-        const handleError = (e: ErrorEvent) => {
-          console.error("Erreur de chargement vidéo:", e);
-          setLoadError("Impossible de charger la vidéo. Problème d'accès au serveur.");
-          toast.error("Erreur de chargement de la vidéo");
-        };
-        
-        videoElement.addEventListener("error", handleError as EventListener);
-        
-        // Tentative de lecture automatique en mode muet (généralement autorisée)
-        videoElement.play()
-          .then(() => {
-            setIsPlaying(true);
-            toast.info("Lecture démarrée en mode muet. Cliquez sur l'icône du son pour activer l'audio.");
-          })
-          .catch(error => {
-            console.error("Erreur lors de la lecture automatique:", error);
-            toast.error("La lecture automatique a été bloquée par le navigateur. Veuillez cliquer sur play pour démarrer.");
-            setIsPlaying(false);
-          });
-        
-        return () => {
-          videoElement.removeEventListener("error", handleError as EventListener);
-          videoElement.pause();
-          videoElement.src = "";
-        };
-      } catch (error) {
-        console.error("Erreur lors de la configuration de la vidéo:", error);
-        setLoadError("Erreur de configuration de la vidéo");
-        toast.error("Erreur de configuration du lecteur vidéo");
-      }
+      // Configuration des attributs CORS et autres attributs importants
+      videoElement.crossOrigin = "anonymous";
+      videoElement.src = videoUrl;
+      videoElement.muted = true;
+      
+      // Gestionnaires d'événements pour surveiller les erreurs de chargement
+      const handleError = (e: Event) => {
+        console.error("Erreur de chargement vidéo:", e);
+        setLoadError("Impossible de charger la vidéo. Veuillez réessayer plus tard.");
+        toast.error("Erreur de chargement de la vidéo");
+      };
+      
+      const handleCanPlay = () => {
+        console.log("Vidéo prête à être lue");
+        toast.success("Vidéo prête à être lue");
+      };
+      
+      videoElement.addEventListener("error", handleError);
+      videoElement.addEventListener("canplay", handleCanPlay);
+      
+      // Tentative de lecture automatique en mode muet (généralement autorisée)
+      videoElement.play()
+        .then(() => {
+          setIsPlaying(true);
+          toast.info("Lecture démarrée en mode muet. Cliquez sur l'icône du son pour activer l'audio.");
+        })
+        .catch(error => {
+          console.error("Erreur lors de la lecture automatique:", error);
+          toast.error("La lecture automatique a été bloquée. Veuillez cliquer sur play pour démarrer.");
+          setIsPlaying(false);
+        });
+      
+      return () => {
+        videoElement.removeEventListener("error", handleError);
+        videoElement.removeEventListener("canplay", handleCanPlay);
+        videoElement.pause();
+        videoElement.src = "";
+      };
     }
-  }, [itemId, serverUrl, userInfo, navigate]);
+  }, [videoUrl]);
   
   const handleBackClick = () => {
     navigate(-1);
@@ -132,6 +148,12 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
               Retourner à la navigation
             </Button>
           </div>
+        </div>
+      )}
+      
+      {!videoUrl && !loadError && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-white"></div>
         </div>
       )}
       

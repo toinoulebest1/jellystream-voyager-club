@@ -180,14 +180,28 @@ export const jellyfinApi = {
   },
   
   getStreamUrl: (serverUrl: string, itemId: string, token: string): string => {
-    // Création d'une URL de streaming avec le token d'authentification approprié
-    // et les paramètres nécessaires pour une lecture fluide
+    // Créer une URL de streaming pour le transcodage compatible avec les navigateurs web
     const url = new URL(`${serverUrl}/Videos/${itemId}/stream`);
-    url.searchParams.append("static", "true");
-    url.searchParams.append("MediaSourceId", itemId);
+    
+    // Paramètres pour demander un transcodage au lieu du fichier original
+    // Spécifier le conteneur et codec que la plupart des navigateurs supportent (MP4/H.264)
     url.searchParams.append("api_key", token);
-    url.searchParams.append("allowDirectPlay", "true"); 
-    url.searchParams.append("allowDirectStream", "true");
+    url.searchParams.append("VideoCodec", "h264");
+    url.searchParams.append("AudioCodec", "aac");
+    url.searchParams.append("Container", "mp4");
+    url.searchParams.append("TranscodingContainer", "mp4");
+    url.searchParams.append("MaxWidth", "1920");
+    url.searchParams.append("MaxHeight", "1080");
+    
+    // Paramètres pour améliorer la qualité du streaming
+    url.searchParams.append("MediaSourceId", itemId);
+    url.searchParams.append("DeviceId", "JellyStream-Web");
+    url.searchParams.append("PlaySessionId", `jellyfin-${Date.now()}`);
+    url.searchParams.append("TranscodingMaxAudioChannels", "2");
+    
+    // Force le transcodage plutôt que la lecture directe pour les formats non supportés
+    url.searchParams.append("allowDirectPlay", "false"); 
+    url.searchParams.append("allowDirectStream", "false");
     
     return url.toString();
   }
