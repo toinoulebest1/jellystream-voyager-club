@@ -31,6 +31,9 @@ export interface JellyfinItem {
   RunTimeTicks?: number;
   SeriesName?: string;
   ParentId?: string;
+  // Ajout des propriétés manquantes
+  Genres?: string[];
+  Studios?: { Name: string; Id: string; }[];
 }
 
 export interface JellyfinLibrary {
