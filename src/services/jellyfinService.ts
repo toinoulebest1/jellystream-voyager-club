@@ -186,70 +186,76 @@ export const jellyfinApi = {
     return `${serverUrl}/Items/${itemId}/Images/Backdrop?tag=${tag}&quality=90`;
   },
   
-  // Fonction optimisée pour obtenir l'URL de streaming
+  // Fonction optimisée pour obtenir l'URL de streaming basée sur le format utilisé par Jellyfin
   getStreamUrl: (
     serverUrl: string, 
     itemId: string, 
     token: string, 
     method: StreamingMethod = StreamingMethod.HLS
   ): string => {
+    // Formatter l'ID pour correspondre au format Jellyfin UUID avec tirets
+    const formattedId = itemId.replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
+    
+    // Générer un ID de session unique
     const playSessionId = `jellyfin-${Date.now()}`;
+    // Générer un device ID consistant
+    const deviceId = `JellyStream-Web-${Math.random().toString(36).substring(2, 9)}`;
+    
+    // Paramètres communs pour toutes les méthodes
+    const commonParams = new URLSearchParams();
+    commonParams.append("DeviceId", deviceId);
+    commonParams.append("MediaSourceId", itemId);
+    commonParams.append("PlaySessionId", playSessionId);
+    commonParams.append("api_key", token);
     
     switch (method) {
       case StreamingMethod.DIRECT:
-        // Lecture directe sans transcodage
-        const directUrl = new URL(`${serverUrl}/Videos/${itemId}/stream`);
-        directUrl.searchParams.append("api_key", token);
-        directUrl.searchParams.append("static", "true");
-        directUrl.searchParams.append("MediaSourceId", itemId);
-        return directUrl.toString();
+        // Lecture directe sans transcodage - pour les fichiers déjà compatibles
+        return `${serverUrl}/Videos/${itemId}/stream?${commonParams.toString()}&static=true`;
         
       case StreamingMethod.MP4:
-        // Transcodage MP4 pour compatibilité maximale
-        const mp4Url = new URL(`${serverUrl}/Videos/${itemId}/stream`);
-        mp4Url.searchParams.append("api_key", token);
-        mp4Url.searchParams.append("PlaySessionId", playSessionId);
-        mp4Url.searchParams.append("MediaSourceId", itemId);
-        mp4Url.searchParams.append("DeviceId", "JellyStream-Web");
-        mp4Url.searchParams.append("VideoCodec", "h264");
-        mp4Url.searchParams.append("AudioCodec", "aac");
-        mp4Url.searchParams.append("Container", "mp4");
-        mp4Url.searchParams.append("TranscodingContainer", "mp4");
-        mp4Url.searchParams.append("MaxWidth", "1280"); // Résolution réduite pour améliorer la compatibilité
-        mp4Url.searchParams.append("MaxHeight", "720");
-        mp4Url.searchParams.append("TranscodingMaxAudioChannels", "2");
-        mp4Url.searchParams.append("VideoBitrate", "2000000"); // Bitrate réduit
-        mp4Url.searchParams.append("AudioBitrate", "128000");
-        mp4Url.searchParams.append("EnableSubtitles", "false");
-        mp4Url.searchParams.append("SubtitleMethod", "Encode");
-        return mp4Url.toString();
+        // URL optimisée pour le format MP4 en utilisant le point d'endpoint /stream
+        const mp4Params = new URLSearchParams(commonParams.toString());
+        mp4Params.append("VideoCodec", "h264");
+        mp4Params.append("AudioCodec", "aac");
+        mp4Params.append("VideoBitrate", "5000000"); // Augmenté pour plus de qualité
+        mp4Params.append("AudioBitrate", "192000"); // Standard pour audio stéréo de bonne qualité
+        mp4Params.append("MaxWidth", "1920"); // Full HD
+        mp4Params.append("MaxHeight", "1080");
+        mp4Params.append("TranscodeReasons", "ContainerNotSupported,VideoCodecNotSupported,AudioCodecNotSupported");
+        mp4Params.append("h264-profile", "high,main,baseline");
+        mp4Params.append("h264-level", "41");
+        mp4Params.append("SubtitleMethod", "None");
+        mp4Params.append("EnableSubtitles", "false");
+        
+        return `${serverUrl}/Videos/${itemId}/stream?${mp4Params.toString()}`;
         
       case StreamingMethod.HLS:
       default:
-        // HLS (HTTP Live Streaming) optimisé
-        const hlsUrl = new URL(`${serverUrl}/Videos/${itemId}/main.m3u8`);
-        hlsUrl.searchParams.append("api_key", token);
-        hlsUrl.searchParams.append("PlaySessionId", playSessionId);
-        hlsUrl.searchParams.append("MediaSourceId", itemId);
-        hlsUrl.searchParams.append("DeviceId", "JellyStream-Web");
-        hlsUrl.searchParams.append("TranscodingMaxAudioChannels", "2");
-        hlsUrl.searchParams.append("Codec", "h264");
-        hlsUrl.searchParams.append("Container", "ts");
-        hlsUrl.searchParams.append("AudioCodec", "aac");
-        hlsUrl.searchParams.append("VideoBitrate", "2000000"); // Réduit pour plus de fiabilité
-        hlsUrl.searchParams.append("AudioBitrate", "128000");
-        hlsUrl.searchParams.append("MaxWidth", "1280"); // Résolution réduite
-        hlsUrl.searchParams.append("MaxHeight", "720");
-        hlsUrl.searchParams.append("MaxVideoBitDepth", "8");
-        hlsUrl.searchParams.append("SubtitleMethod", "None");
-        hlsUrl.searchParams.append("EnableSubtitles", "false");
-        hlsUrl.searchParams.append("RequireAvc", "true");
-        hlsUrl.searchParams.append("SegmentContainer", "ts");
-        hlsUrl.searchParams.append("MinSegments", "1");
-        hlsUrl.searchParams.append("BreakOnNonKeyFrames", "true");
-        hlsUrl.searchParams.append("h264-profile", "high,main,baseline");
-        hlsUrl.searchParams.append("h264-level", "41");
-        return hlsUrl.toString();
+        // HLS (HTTP Live Streaming) avec format similaire à celui utilisé par le client Jellyfin officiel
+        const hlsParams = new URLSearchParams(commonParams.toString());
+        hlsParams.append("VideoCodec", "h264,av1,vp9");
+        hlsParams.append("AudioCodec", "aac");
+        hlsParams.append("AudioSampleRate", "44100");
+        hlsParams.append("VideoBitrate", "5000000");
+        hlsParams.append("AudioBitrate", "192000");
+        hlsParams.append("MaxWidth", "1920");
+        hlsParams.append("MaxHeight", "1080");
+        hlsParams.append("MaxFramerate", "60");
+        hlsParams.append("RequireAvc", "false"); // Permet d'utiliser d'autres codecs vidéo si disponibles
+        hlsParams.append("TranscodingMaxAudioChannels", "2");
+        hlsParams.append("SegmentContainer", "ts"); // TS est mieux supporté pour HLS
+        hlsParams.append("MinSegments", "1");
+        hlsParams.append("BreakOnNonKeyFrames", "True");
+        hlsParams.append("h264-profile", "high,main,baseline");
+        hlsParams.append("h264-level", "42");
+        hlsParams.append("h264-deinterlace", "true");
+        hlsParams.append("SubtitleMethod", "None");
+        hlsParams.append("EnableSubtitles", "false");
+        hlsParams.append("TranscodeReasons", "ContainerNotSupported,VideoCodecNotSupported,AudioCodecNotSupported");
+        
+        // Utiliser le format /videos/{id}/master.m3u8 comme dans l'exemple
+        return `${serverUrl}/videos/${formattedId}/master.m3u8?${hlsParams.toString()}`;
     }
   },
   

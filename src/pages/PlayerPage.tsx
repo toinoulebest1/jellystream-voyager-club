@@ -33,29 +33,42 @@ const PlayerPage = () => {
     // Vérifier que les paramètres requis sont présents
     console.log("Préparation de la lecture du média:", id);
     
-    // Vérifier si le navigateur prend en charge HLS nativement
-    const video = document.createElement('video');
-    let hlsSupport = false;
-    
-    try {
-      hlsSupport = video.canPlayType('application/vnd.apple.mpegurl') !== '';
-      console.log("Support HLS natif:", hlsSupport ? "Oui" : "Non (HLS.js sera utilisé)");
+    // Détecter le support des formats vidéo
+    const detectVideoSupport = () => {
+      const video = document.createElement('video');
       
-      // Tester également d'autres formats
-      const mp4Support = video.canPlayType('video/mp4') !== '';
-      console.log("Support MP4:", mp4Support ? "Oui" : "Non");
-      
-      const webmSupport = video.canPlayType('video/webm') !== '';
-      console.log("Support WebM:", webmSupport ? "Oui" : "Non");
-      
-      // Définir la méthode préférée selon le support du navigateur
-      if (!hlsSupport) {
+      try {
+        // Tester le support HLS natif
+        const hlsSupport = video.canPlayType('application/vnd.apple.mpegurl') !== '';
+        console.log("Support HLS natif:", hlsSupport ? "Oui" : "Non (HLS.js sera utilisé si disponible)");
+        
+        // Tester le support des formats courants
+        const mp4Support = video.canPlayType('video/mp4') !== '';
+        console.log("Support MP4:", mp4Support ? "Oui" : "Non");
+        
+        const webmSupport = video.canPlayType('video/webm') !== '';
+        console.log("Support WebM:", webmSupport ? "Oui" : "Non");
+        
+        // Définir la méthode préférée selon les capacités du navigateur
+        if (hlsSupport) {
+          setPreferredMethod(StreamingMethod.HLS);
+        } else if (mp4Support) {
+          setPreferredMethod(StreamingMethod.MP4);
+        } else {
+          // Fallback vers la lecture directe si rien d'autre n'est supporté
+          setPreferredMethod(StreamingMethod.DIRECT);
+          toast.warning("Votre navigateur a un support limité pour la lecture vidéo");
+        }
+      } catch (e) {
+        console.error("Erreur lors de la détection des formats supportés:", e);
+        // Fallback sur MP4 en cas d'erreur
         setPreferredMethod(StreamingMethod.MP4);
       }
-    } catch (e) {
-      console.log("Erreur lors de la vérification du support des formats:", e);
-      setPreferredMethod(StreamingMethod.MP4); // Fallback sur MP4 en cas d'erreur
-    }
+    };
+    
+    // Exécuter la détection de format
+    detectVideoSupport();
+    
   }, [id, serverUrl, userInfo, navigate]);
 
   if (error) {
