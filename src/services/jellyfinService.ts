@@ -1,3 +1,4 @@
+
 import { toast } from 'sonner';
 
 // Types basiques pour Jellyfin API
@@ -185,7 +186,7 @@ export const jellyfinApi = {
     return `${serverUrl}/Items/${itemId}/Images/Backdrop?tag=${tag}&quality=90`;
   },
   
-  // Fonction améliorée pour obtenir l'URL de streaming
+  // Fonction optimisée pour obtenir l'URL de streaming
   getStreamUrl: (
     serverUrl: string, 
     itemId: string, 
@@ -214,10 +215,10 @@ export const jellyfinApi = {
         mp4Url.searchParams.append("AudioCodec", "aac");
         mp4Url.searchParams.append("Container", "mp4");
         mp4Url.searchParams.append("TranscodingContainer", "mp4");
-        mp4Url.searchParams.append("MaxWidth", "1920");
-        mp4Url.searchParams.append("MaxHeight", "1080");
+        mp4Url.searchParams.append("MaxWidth", "1280"); // Résolution réduite pour améliorer la compatibilité
+        mp4Url.searchParams.append("MaxHeight", "720");
         mp4Url.searchParams.append("TranscodingMaxAudioChannels", "2");
-        mp4Url.searchParams.append("VideoBitrate", "3000000");
+        mp4Url.searchParams.append("VideoBitrate", "2000000"); // Bitrate réduit
         mp4Url.searchParams.append("AudioBitrate", "128000");
         mp4Url.searchParams.append("EnableSubtitles", "false");
         mp4Url.searchParams.append("SubtitleMethod", "Encode");
@@ -225,7 +226,7 @@ export const jellyfinApi = {
         
       case StreamingMethod.HLS:
       default:
-        // HLS (HTTP Live Streaming) pour téléchargement progressif
+        // HLS (HTTP Live Streaming) optimisé
         const hlsUrl = new URL(`${serverUrl}/Videos/${itemId}/main.m3u8`);
         hlsUrl.searchParams.append("api_key", token);
         hlsUrl.searchParams.append("PlaySessionId", playSessionId);
@@ -235,12 +236,19 @@ export const jellyfinApi = {
         hlsUrl.searchParams.append("Codec", "h264");
         hlsUrl.searchParams.append("Container", "ts");
         hlsUrl.searchParams.append("AudioCodec", "aac");
-        hlsUrl.searchParams.append("VideoBitrate", "2000000");
+        hlsUrl.searchParams.append("VideoBitrate", "2000000"); // Réduit pour plus de fiabilité
         hlsUrl.searchParams.append("AudioBitrate", "128000");
+        hlsUrl.searchParams.append("MaxWidth", "1280"); // Résolution réduite
+        hlsUrl.searchParams.append("MaxHeight", "720");
         hlsUrl.searchParams.append("MaxVideoBitDepth", "8");
         hlsUrl.searchParams.append("SubtitleMethod", "None");
         hlsUrl.searchParams.append("EnableSubtitles", "false");
         hlsUrl.searchParams.append("RequireAvc", "true");
+        hlsUrl.searchParams.append("SegmentContainer", "ts");
+        hlsUrl.searchParams.append("MinSegments", "1");
+        hlsUrl.searchParams.append("BreakOnNonKeyFrames", "true");
+        hlsUrl.searchParams.append("h264-profile", "high,main,baseline");
+        hlsUrl.searchParams.append("h264-level", "41");
         return hlsUrl.toString();
     }
   },

@@ -9,9 +9,10 @@ import Hls from "hls.js";
 
 interface VideoPlayerProps {
   itemId: string;
+  initialMethod?: StreamingMethod;
 }
 
-export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
+export const VideoPlayer = ({ itemId, initialMethod = StreamingMethod.HLS }: VideoPlayerProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const navigate = useNavigate();
@@ -21,10 +22,11 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [retryCount, setRetryCount] = useState(0);
-  const [currentMethod, setCurrentMethod] = useState<StreamingMethod>(StreamingMethod.HLS);
+  const [currentMethod, setCurrentMethod] = useState<StreamingMethod>(initialMethod);
   const { getServerUrl, getUserInfo } = useJellyfinStore();
   const attemptedUrlsRef = useRef<Set<string>>(new Set());
   const initializingRef = useRef<boolean>(false);
+  const maxRetries = useRef<number>(3);
   
   const serverUrl = getServerUrl();
   const userInfo = getUserInfo();
@@ -47,6 +49,13 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
   
   // Cycle entre les différentes méthodes de streaming
   const cycleStreamingMethod = useCallback(() => {
+    if (retryCount >= maxRetries.current * 3) {
+      // Si on a dépassé le nombre max de tentatives, afficher une erreur finale
+      setLoadError("Impossible de lire cette vidéo après plusieurs tentatives. Essayez un autre média ou vérifiez votre serveur Jellyfin.");
+      toast.error("Échec de lecture après plusieurs tentatives");
+      return;
+    }
+    
     setCurrentMethod((prev) => {
       switch (prev) {
         case StreamingMethod.HLS:
@@ -59,7 +68,7 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
       }
     });
     setRetryCount(prev => prev + 1);
-  }, []);
+  }, [retryCount]);
   
   // Générer l'URL de streaming uniquement quand la méthode ou l'ID change
   useEffect(() => {
@@ -68,18 +77,35 @@ export const VideoPlayer = ({ itemId }: VideoPlayerProps) => {
       return;
     }
     
+    // Réinitialiser l'état
     setIsLoading(true);
     setLoadError(null);
     
-    // Générer une nouvelle URL de streaming
-    const newUrl = generateStreamUrl();
-    if (newUrl) {
-      setVideoUrl(newUrl);
-    } else {
-      setLoadError("Impossible de générer l'URL de streaming");
-      setIsLoading(false);
-      toast.error("Erreur de préparation de la vidéo");
+    // Arrêter toute lecture en cours
+    if (videoRef.current) {
+      videoRef.current.pause();
     }
+    
+    // Détruire toute instance HLS précédente
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+    
+    // Attendre un court instant pour stabiliser l'état
+    const timer = setTimeout(() => {
+      // Générer une nouvelle URL de streaming
+      const newUrl = generateStreamUrl();
+      if (newUrl) {
+        setVideoUrl(newUrl);
+      } else {
+        setLoadError("Impossible de générer l'URL de streaming");
+        setIsLoading(false);
+        toast.error("Erreur de préparation de la vidéo");
+      }
+    }, 300);
+    
+    return () => clearTimeout(timer);
   }, [itemId, serverUrl, userInfo, navigate, currentMethod, generateStreamUrl]);
   
   // Nettoyage de l'instance HLS lors du démontage du composant
