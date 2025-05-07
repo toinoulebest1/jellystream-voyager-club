@@ -180,28 +180,40 @@ export const jellyfinApi = {
   },
   
   getStreamUrl: (serverUrl: string, itemId: string, token: string): string => {
-    // Créer une URL de streaming pour le transcodage compatible avec les navigateurs web
+    // Créer une URL de streaming adaptée aux navigateurs web modernes
     const url = new URL(`${serverUrl}/Videos/${itemId}/stream`);
     
-    // Paramètres pour demander un transcodage au lieu du fichier original
-    // Spécifier le conteneur et codec que la plupart des navigateurs supportent (MP4/H.264)
+    // Paramètres pour demander un transcodage compatible avec les navigateurs
     url.searchParams.append("api_key", token);
-    url.searchParams.append("VideoCodec", "h264");
-    url.searchParams.append("AudioCodec", "aac");
-    url.searchParams.append("Container", "mp4");
+    
+    // Spécifier explicitement les codecs et conteneurs compatibles avec les navigateurs web
+    url.searchParams.append("VideoCodec", "h264");  // Codec vidéo largement supporté
+    url.searchParams.append("AudioCodec", "aac");   // Codec audio largement supporté
+    url.searchParams.append("Container", "mp4");    // Format conteneur compatible
     url.searchParams.append("TranscodingContainer", "mp4");
+    
+    // Résolution maximale pour éviter une consommation excessive de bande passante
     url.searchParams.append("MaxWidth", "1920");
     url.searchParams.append("MaxHeight", "1080");
     
-    // Paramètres pour améliorer la qualité du streaming
+    // Identifiants et métadonnées
     url.searchParams.append("MediaSourceId", itemId);
     url.searchParams.append("DeviceId", "JellyStream-Web");
     url.searchParams.append("PlaySessionId", `jellyfin-${Date.now()}`);
     url.searchParams.append("TranscodingMaxAudioChannels", "2");
     
-    // Force le transcodage plutôt que la lecture directe pour les formats non supportés
+    // Forcer le transcodage pour garantir la compatibilité
     url.searchParams.append("allowDirectPlay", "false"); 
     url.searchParams.append("allowDirectStream", "false");
+    
+    // Paramètres pour améliorer la compatibilité de streaming
+    url.searchParams.append("EnableSubtitles", "false"); // Désactiver les sous-titres pour simplifier le transcodage
+    url.searchParams.append("SubtitleMethod", "Encode"); // Si des sous-titres sont demandés, les encoder dans la vidéo
+    url.searchParams.append("StartTimeTicks", "0"); // Démarrer depuis le début
+    
+    // Qualité adaptée au streaming web
+    url.searchParams.append("VideoBitrate", "3000000"); // 3 Mbps pour un bon compromis qualité/fluidité
+    url.searchParams.append("AudioBitrate", "128000"); // 128 kbps pour l'audio
     
     return url.toString();
   }
